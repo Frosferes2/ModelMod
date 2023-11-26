@@ -188,6 +188,12 @@ module MeshTransform =
             let funcs = xforms |> List.map getMeshXformFunc
             let compositeTransform = funcs |> Seq.map invokeBuilder |> Seq.reduce (>>)
             let mesh = MeshUtil.applyNormalTransformation compositeTransform mesh
+
+            // transform tangents if present
+            let getMeshXformFunc xname = parseVec3XformFunc true mesh xname
+            let funcs = xforms |> List.map getMeshXformFunc
+            let compositeTransform = funcs |> Seq.map invokeBuilder |> Seq.reduce (>>)
+            let mesh = MeshUtil.applyTangentTransformation compositeTransform mesh
             mesh
 
     /// As for applyMeshTransformsInternal, but for uv coordinates.

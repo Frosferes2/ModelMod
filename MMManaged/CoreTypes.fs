@@ -229,6 +229,8 @@ module CoreTypes =
         UVs: Vec2F[]
         /// Array of normals.  Assumed to be normalized (by the 3D tool hopefully).
         Normals: Vec3F[]
+        /// Array of tangents.  If tangent space is exported, read them in. If missing, approximate from normals.
+        Tangents: Vec3F[]
         /// Array of blend indices.
         BlendIndices: Vec4X[]
         /// Array of blend weights.

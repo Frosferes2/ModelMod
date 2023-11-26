@@ -434,13 +434,12 @@ module ModDBInterop =
             if (idx > mesh.BlendWeights.Length) then
                 failwithf "oops: invalid blend-weight index: %A of %A" idx mesh.BlendWeights.Length
             let wgt = mesh.BlendWeights.[idx]
-
-            let buf = [| byte (round(wgt.X * 255.f)); byte (round (wgt.Y * 255.f)) ; byte (round (wgt.Z * 255.f)); byte (round (wgt.W * 255.f)) |]
-            // weights must sum to 255
-//            let sum = Array.sum buf
-//            if (sum <> (byte 255)) then
-//                log.Error "weights do not sum to 255 for idx %A: %A, %A; basevec: %A" idx buf sum wgt
-            bw.Write(buf)
+            // The sum of a byte array can cause an overflow if greater than 255, so initialize with ints
+            let buf = [| int (round(wgt.X * 255.f)); int (round (wgt.Y * 255.f)); int (round (wgt.Z * 255.f)); int (round (wgt.W * 255.f)) |]
+            // Weights must sum to exactly 255, adjust highest weight for rounding error discrepancies, highest weight is always first
+            buf[0] <- buf[0] + (255 - Array.sum buf)
+            // Convert to byte array
+            bw.Write(buf |> Array.map byte)
 
         /// Write a blend weight from the specified mesh as 4 32-bit float values.
         let private writeMeshBWF4 (mesh:Mesh) (idx:int) (bw:BinaryWriter) =
@@ -463,7 +462,7 @@ module ModDBInterop =
                 | _ -> failwithf "Unsupported type for mod blend index: %A" el.Type
             | MMET.Format(f) ->
                 match f with
-                | SDXF.R8G8B8A8_UNorm -> writeBI()
+                | SDXF.R8G8B8A8_UInt -> writeBI()
                 | _ -> failwithf "Unsupported format for mod blend index: %A" el.Type
 
         /// Write a blend index from the ref mesh.
@@ -521,7 +520,11 @@ module ModDBInterop =
                 | SDXF.R32G32B32A32_Float -> writeBWF4()
                 | _ -> failwithf "Unsupported type for ref blend weight: %A" el.Type
         /// Write a normal from the mod mesh.
-        let modmNormal (modm:Mesh) (modNrmIndex: int) (_modVertIndex: int) (el:MMVertexElement) (bw:BinaryWriter) =
+        let modmNormal (modm:Mesh) (modNrmIndex: int) (modVertIndex: int) (el:MMVertexElement) (bw:BinaryWriter) =
+            // Use vertex index for normal pointer if possible as it is more accurate. Fall back to normal index
+            // With this change, the lighting is no longer uni-directional, but still appears to be oriented incorrectly
+            // It is a lot better than before, so it will do for now. More investigation into the vector basis transform is needed
+            let activeIndex = if (modVertIndex < modm.Normals.Length) then modVertIndex else modNrmIndex
             match el.Type with
             | MMET.DeclType(dt) ->
                 match dt with
@@ -529,34 +532,42 @@ module ModDBInterop =
                 | SDXVertexDeclType.UByte4N
                 | SDXVertexDeclType.Ubyte4 ->
                     // convert normal to 4 byte rep
-                    let srcNrm = modm.Normals.[modNrmIndex]
+                    let srcNrm = modm.Normals.[activeIndex]
                     write4ByteVector srcNrm bw
                 | SDXVertexDeclType.Float3 ->
-                    let srcNrm = modm.Normals.[modNrmIndex]
+                    let srcNrm = modm.Normals.[activeIndex]
                     writeF3Vector srcNrm bw
                 | _ -> failwithf "Unsupported type for mod normal: %A" el.Type
             | MMET.Format(f) ->
                 match f with
                 | SDXF.R32G32B32_Float ->
-                    let srcNrm = modm.Normals.[modNrmIndex]
+                    let srcNrm = modm.Normals.[activeIndex]
                     writeF3Vector srcNrm bw
                 | SDXF.R8G8B8A8_UNorm ->
-                    let srcNrm = modm.Normals.[modNrmIndex]
+                    let srcNrm = modm.Normals.[activeIndex]
                     write4ByteVector srcNrm bw
                 | _ -> failwithf "Unsupported type for mod normal: %A" el.Type
 
         /// Write a binormal or tangent vector, computed using the normal from the mod mesh.
-        let modmBinormalTangent (modm:Mesh) (modNrmIndex: int) (_modVertIndex: int) (el:MMVertexElement) (bw:BinaryWriter) =
+        let modmBinormalTangent (modm:Mesh) (modNrmIndex: int) (modVertIndex: int) (el:MMVertexElement) (bw:BinaryWriter) =
             // This isn't the most accurate way to compute these, but its easier than the mathematically correct method, which
             // requires inspecting the triangle and uv coordinates.  Its probably worth implementing that at some point,
             // but this produces good enough results in most cases.
             // Update: well actually this produces bad results as shader detail increases (see issue #10)
             // see: http://www.geeks3d.com/20130122/normal-mapping-without-precomputed-tangent-space-vectors/
-            let srcNrm = modm.Normals.[modNrmIndex]
-            let v1 = Vector3.Cross(srcNrm, Vector3(0.f, 0.f, 1.f))
-            let v2 = Vector3.Cross(srcNrm, Vector3(0.f, 1.f, 0.f))
-            let t = if (v1.Length() > v2.Length()) then v1 else v2
-            t.Normalize()
+            // Use vertex index for normal and tangent pointer if possible as it is more accurate. Fall back to normal index
+            let activeIndex = if (modVertIndex < modm.Normals.Length) then modVertIndex else modNrmIndex
+            let srcNrm = modm.Normals.[activeIndex]
+            // If mod DB has a populated tangents list, use that. Else fall back to cross product method with normal
+            let t =
+                if (activeIndex < modm.Tangents.Length) then modm.Tangents[activeIndex]
+                else
+                    let v1 = Vector3.Cross(srcNrm, Vector3(0.f, 0.f, 1.f))
+                    let v2 = Vector3.Cross(srcNrm, Vector3(0.f, 1.f, 0.f))
+                    let t = if (v1.Length() > v2.Length()) then v1 else v2
+                    t.Normalize()
+                    t
+            // Returned vector can be tangent or binormal depending on the supplied vertex element type
             let vec =
                 if (el.Semantic = MMVertexElemSemantic.Binormal) then
                     let b = Vector3.Cross(srcNrm,t)

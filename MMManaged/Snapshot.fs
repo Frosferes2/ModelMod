@@ -563,6 +563,7 @@ module Snapshot =
             // create arrays for storage
             let positions = new ResizeArray<Vec3F>()
             let normals = new ResizeArray<Vec3F>()
+            let tangents = new ResizeArray<Vec3F>()
             let uvs = new ResizeArray<Vec2F>()
             let blendIndices = new ResizeArray<Vec4X>()
             let blendWeights = new ResizeArray<Vec4F>()
@@ -692,6 +693,7 @@ module Snapshot =
                 Positions = positions.ToArray()
                 UVs = uvs.ToArray()
                 Normals = normals.ToArray()
+                Tangents = tangents.ToArray()
                 BlendIndices = blendIndices.ToArray()
                 BlendWeights = blendWeights.ToArray()
                 Declaration = None

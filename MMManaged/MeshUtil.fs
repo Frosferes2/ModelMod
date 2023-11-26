@@ -222,6 +222,7 @@ module MeshUtil =
 
         let positions = new ResizeArray<Vec3F>()
         let normals = new ResizeArray<Vec3F>()
+        let tangents = new ResizeArray<Vec3F>()
         let uvs = new ResizeArray<Vec2F>()
 
         let blendindices = new ResizeArray<Vec4X>()
@@ -256,6 +257,8 @@ module MeshUtil =
                     positions.Add(v)
                 | Vec3f @"vn\s+(\S+)\s+(\S+)\s+(\S+).*" vn ->
                     normals.Add(vn)
+                | Vec3f @"#tn\s+(\S+)\s+(\S+)\s+(\S+).*" tn ->
+                    tangents.Add(tn)
                 | VertexGroupName @"#vgn\s+(\S+).*" (vgroup) ->
                     if not (vgnames.Contains(vgroup)) then
                         vgnames.Add(vgroup)
@@ -301,7 +304,7 @@ module MeshUtil =
         //groupsForVertex |> Array.iteri (fun i vlst -> if not (List.isEmpty vlst) then printfn "vert %d has annotated groups: %A" i vlst )
 
         log.Info "Loaded %s:" filename
-        log.Info "  %d triangles, %d positions, %d uvs, %d normals" triangles.Length positions.Count uvs.Count normals.Count
+        log.Info "  %d triangles, %d positions, %d uvs, %d normals, %d tangents" triangles.Length positions.Count uvs.Count normals.Count tangents.Count
         log.Info "  %d blend indices, %d blend weights" blendindices.Count blendweights.Count
         log.Info "  %d position transforms; %d uv transforms" postransforms.Count uvtransforms.Count
         log.Info "  %d named vertex groups; %d vertex/group associations " vgnames.Count groupsForVertex.Length
@@ -324,6 +327,7 @@ module MeshUtil =
             Positions = positions.ToArray()
             UVs = uvs.ToArray()
             Normals = normals.ToArray()
+            Tangents = tangents.ToArray()
             BlendIndices = blendindices.ToArray()
             BlendWeights = blendweights.ToArray()
             Declaration = None
@@ -557,6 +561,12 @@ map_Kd $$filename
     let applyNormalTransformation func (mesh:Mesh) =
         let newNormals = mesh.Normals |> Array.map func
         { mesh with Normals = newNormals }
+
+    /// Apply the specified tangent transformation func.  Calling code should ensure
+    /// that the function name is stored in the AppliedPositionTransforms of the mesh.
+    let applyTangentTransformation func (mesh:Mesh) =
+        let newTangents = mesh.Tangents |> Array.map func
+        { mesh with Tangents = newTangents }
 
     /// Apply the specified uv transformation func.  Calling code should ensure
     /// that the function name is stored in the AppliedUVTransforms of the mesh.
