@@ -28,15 +28,30 @@ module MeshTransform =
 
     let rotX (isNormal:bool) (angleDeg) =
         let mat = Matrix.CreateRotationX(MathHelper.ToRadians angleDeg)
-        let rotate (vec:Vector3) = if isNormal then Vector3.TransformNormal(vec,mat) else Vector3.Transform(vec,mat)
+        // For some reason I can't seem to get the lighting to look right without an additional Y rotation, even though this isn't in the func list
+        let rotate (vec:Vector3) =
+            if isNormal then
+                Vector3.TransformNormal(vec,Matrix.Multiply(mat, Matrix.CreateRotationY(float32 Math.PI * 0.5f)))
+            else 
+                Vector3.Transform(vec,mat)
         rotate
     let rotY (isNormal:bool) (angleDeg) =
         let mat = Matrix.CreateRotationY(MathHelper.ToRadians angleDeg)
-        let rotate (vec:Vector3) = if isNormal then Vector3.TransformNormal(vec,mat) else Vector3.Transform(vec,mat)
+        // I am assuming the need for this offset mat is the case in other transform bases. I can't really test further until snapshotting works
+        let rotate (vec:Vector3) =
+            if isNormal then
+                Vector3.TransformNormal(vec,Matrix.Multiply(mat, Matrix.CreateRotationY(float32 Math.PI * 0.5f)))
+            else 
+                Vector3.Transform(vec,mat)
         rotate
     let rotZ (isNormal:bool) (angleDeg) =
         let mat = Matrix.CreateRotationZ(MathHelper.ToRadians angleDeg)
-        let rotate (vec:Vector3) = if isNormal then Vector3.TransformNormal(vec,mat) else Vector3.Transform(vec,mat)
+        // I am assuming the need for this offset mat is the case in other transform bases. I can't really test further until snapshotting works
+        let rotate (vec:Vector3) =
+            if isNormal then
+                Vector3.TransformNormal(vec,Matrix.Multiply(mat, Matrix.CreateRotationY(float32 Math.PI * 0.5f)))
+            else 
+                Vector3.Transform(vec,mat)
         rotate
 
     let uniformScale (isNormal:bool) (amount:float32) =
@@ -49,6 +64,22 @@ module MeshTransform =
             else
                 Vector3.Transform(vec,mat)
         scale
+
+    /// Flips the X coordinate (X <- - x)
+    let posFlipX (isNormal:bool) (unused:float32) =
+        let flip(vec:Vector3) = if isNormal then vec else new Vector3(- vec.X, vec.Y, vec.Z)
+        //let flip(vec:Vector3) = if isNormal then new Vector3(vec.X, - vec.Y, - vec.Z) else new Vector3(vec.X, vec.Y, - vec.Z)
+        flip
+    /// Flips the Y coordinate (Y <- - Y)
+    let posFlipY (isNormal:bool) (unused:float32) =
+        let flip(vec:Vector3) = if isNormal then vec else new Vector3(vec.X, - vec.Y, vec.Z)
+        //let flip(vec:Vector3) = if isNormal then new Vector3(- vec.X, vec.Y, - vec.Z) else new Vector3(vec.X, vec.Y, - vec.Z)
+        flip
+    /// Flips the Z coordinate (Z <- - Z)
+    let posFlipZ (isNormal:bool) (unused:float32) =
+        let flip(vec:Vector3) = if isNormal then vec else new Vector3(vec.X, vec.Y, - vec.Z)
+        //let flip(vec:Vector3) = if isNormal then new Vector3(- vec.X, - vec.Y, vec.Z) else new Vector3(vec.X, vec.Y, - vec.Z)
+        flip
 
     /// Flips the UV Y coordinate (Y <- 1 - Y)
     let uvFlipY (unused:float32) =
@@ -111,12 +142,26 @@ module MeshTransform =
                 then log.Error "Illegal rotation, separate axis and angle by spaces (ex: 'rot x 90'): supplied value: %A" xname; dummyRet
                 else
                     let axis = parts.[1].Trim().ToLowerInvariant()
-                    let angDeg = parts.[2].Trim() |> convertSingle
+                    //let angDeg = parts.[2].Trim() |> convertSingle
+                    let angDeg = 
+                        let a1 = parts.[2].Trim() |> convertSingle
+                        let a2 = a1 - (2.f * System.Convert.ToSingle(isNormal) * a1)
+                        a2
                     match axis with
                     | "x" -> fnName,rotX isNormal,angDeg
                     | "y" -> fnName,rotY isNormal,angDeg
                     | "z" -> fnName,rotZ isNormal,angDeg
                     | _ -> log.Error "Unknown rotation axis: %A in value: %A" axis xname; dummyRet
+        | "flip" ->
+            if parts.Length <> 2
+                then log.Error "Illegal position flip, separate axis and angle by spaces (ex: 'flip x'): supplied value: %A" xname; dummyRet
+                else
+                    let axis = parts.[1].Trim().ToLowerInvariant()
+                    match axis with
+                    | "x" -> fnName,posFlipX isNormal,0.f
+                    | "y" -> fnName,posFlipY isNormal,0.f
+                    | "z" -> fnName,posFlipZ isNormal,0.f
+                    | _ -> log.Error "Unknown flip axis: %A in value: %A" axis xname; dummyRet
         | "" -> log.Error "Empty string is an invalid transform function"; dummyRet
         | _ -> log.Error "Unrecognized vec3 transform function: %s" fnName; dummyRet
 
@@ -127,7 +172,7 @@ module MeshTransform =
         match fnName with
         | "flip" ->
             if parts.Length <> 2
-                then log.Error "Illegal flip, separate axis and angle by spaces (ex: 'flip x'): supplied value: %A" xname; dummyRet
+                then log.Error "Illegal UV flip, separate axis and angle by spaces (ex: 'flip x'): supplied value: %A" xname; dummyRet
                 else
                     let axis = parts.[1].Trim().ToLowerInvariant()
                     match axis with
@@ -190,9 +235,6 @@ module MeshTransform =
             let mesh = MeshUtil.applyNormalTransformation compositeTransform mesh
 
             // transform tangents if present
-            let getMeshXformFunc xname = parseVec3XformFunc true mesh xname
-            let funcs = xforms |> List.map getMeshXformFunc
-            let compositeTransform = funcs |> Seq.map invokeBuilder |> Seq.reduce (>>)
             let mesh = MeshUtil.applyTangentTransformation compositeTransform mesh
             mesh
 
