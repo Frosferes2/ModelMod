@@ -573,3 +573,10 @@ map_Kd $$filename
     let applyUVTransformation func (mesh:Mesh) =
         let newUVs = mesh.UVs |> Array.map func
         { mesh with UVs = newUVs }
+
+    /// Reverses the rotational order of triangle verts.  Only called during
+    /// snapshotting if an axis is mirrored to correct mmobj face normal directions.
+    let reverseTriangleWinding (mesh:Mesh) =
+        let func(tri:IndexedTri) = { Verts = [| tri.Verts[0]; tri.Verts[2]; tri.Verts[1] |] }
+        let newTriangles = mesh.Triangles |> Array.map func
+        { mesh with Triangles = newTriangles }

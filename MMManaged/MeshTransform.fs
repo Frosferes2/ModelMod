@@ -214,7 +214,7 @@ module MeshTransform =
     /// to change the order in which they are applied (see buildInvocation,buildReverseInvocation).
     /// This function operates on spatial mesh data (positions and normals).
     // NOTE: this implementation has some good points, but I'm sure it could be done more simply.
-    let private applyMeshTransformsInternal (xforms:string list) (invokeBuilder) (mesh:Mesh) =
+    let private applyMeshTransformsInternal (xforms:string list) (invokeBuilder) (forward:bool) (mesh:Mesh) =
         if xforms.IsEmpty then
             mesh
         else
@@ -227,6 +227,18 @@ module MeshTransform =
             let compositeTransform = funcs |> Seq.map invokeBuilder |> Seq.reduce (>>)
 
             let mesh = MeshUtil.applyPositionTransformation compositeTransform mesh
+
+            // If "flip" appears an odd number of times in the function list, reverse triangle winding.
+            // https://learn.microsoft.com/en-us/windows/win32/direct3d9/coordinate-systems
+            // This only appears necessary when the transforms are called by snapshotting i.e. forwards.
+            let revTriWind =
+                if forward then
+                    List.map (fun (first, _, _) -> first) funcs |> List.filter (fun x -> x = "flip") |> List.length |> fun x -> x % 2 = 1
+                else false
+
+            let mesh =
+                if revTriWind then MeshUtil.reverseTriangleWinding mesh
+                else mesh
 
             // also need to do normals
             let getMeshXformFunc xname = parseVec3XformFunc true mesh xname
@@ -252,12 +264,12 @@ module MeshTransform =
 
     /// Apply the specified list of transforms to the mesh.
     let applyMeshTransforms (xforms:string list) (uvXforms:string list) (mesh:Mesh) =
-        let mesh = applyMeshTransformsInternal xforms buildInvocation mesh
+        let mesh = applyMeshTransformsInternal xforms buildInvocation true mesh
         let mesh = applyUVTransformsInternal uvXforms buildInvocation mesh
         mesh
 
     /// Reverse each supplied transform, then apply them to the mesh.
     let reverseMeshTransforms (xforms:string list) (uvXforms:string list) (mesh:Mesh) =
-        let mesh = applyMeshTransformsInternal (List.rev xforms) buildReverseInvocation mesh
+        let mesh = applyMeshTransformsInternal (List.rev xforms) buildReverseInvocation false mesh
         let mesh = applyUVTransformsInternal (List.rev uvXforms) buildReverseInvocation mesh
         mesh
